@@ -1,0 +1,191 @@
+1.Voting.js
+const { ethers } = require("ethers");
+const fs = require("fs");
+const path = require("path");
+const solc = require("solc");
+const readline = require("readline");
+
+// =========================================================================
+// CRITICAL CREDENTIAL CONFIGURATION: Paste your parameters directly here
+// =========================================================================
+const SEPOLIA_RPC_URL = "https://ethereum-sepolia-rpc.publicnode.com";
+const PRIVATE_KEY = "edd9f28054dfe2abf396917385a8c556839169c2221a607af70d6ea3c608385d";
+// =========================================================================
+
+
+let contractAddress = "";
+
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+const askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
+
+async function main() {
+    if (PRIVATE_KEY.includes("YOUR_")) {
+        console.error("\nINITIALIZATION ERROR: Update your true private key variable string at the top lines.");
+        process.exit(1);
+    }
+
+    const provider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL, {
+        name: "sepolia",
+        chainId: 11155111
+    }, { staticNetwork: true });
+
+    const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+    console.log(`\nConnected Cryptographic Signer Wallet Address: ${wallet.address}`);
+
+    console.log("Compiling 'Voting.sol' locally to map out interface rules...");
+    const contractPath = path.resolve(__dirname, "Voting.sol");
+    if (!fs.existsSync(contractPath)) {
+        console.error("ERROR: 'Voting.sol' file not found in this folder directory. Keep the file intact here.");
+        process.exit(1);
+    }
+
+    const source = fs.readFileSync(contractPath, "utf8");
+    const input = {
+        language: "Solidity",
+        sources: { "Voting.sol": { content: source } },
+        settings: { outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } } }
+    };
+
+    const output = JSON.parse(solc.compile(JSON.stringify(input)));
+    if (output.errors) {
+        output.errors.forEach(err => {
+            if (err.severity === "error") {
+                console.error("Solidity Compilation Failure:", err.message);
+                process.exit(1);
+            }
+        });
+    }
+
+    const contractData = output.contracts["Voting.sol"]["Voting"];
+    const contractABI = contractData.abi;
+    const bytecode = contractData.evm.bytecode.object;
+
+    if (!contractAddress || contractAddress.includes("YOUR_")) {
+        console.log("\nNo contract address detected. Broadcasting new deployment transaction...");
+        const factory = new ethers.ContractFactory(contractABI, bytecode, wallet);
+        const contract = await factory.deploy(["Alice", "Bob", "Charlie"]);
+        
+        console.log("Awaiting network mining confirmation block confirmation layers... Please wait.");
+        await contract.waitForDeployment();
+        
+        contractAddress = await contract.getAddress();
+        console.log("\n==================================================");
+        console.log(`AUTOMATED COMPILATION & DEPLOYMENT COMPLETE!`);
+        console.log(`Deployed Contract Address: ${contractAddress}`);
+        console.log("==================================================");
+    }
+
+    const votingContract = new ethers.Contract(contractAddress, contractABI, wallet);
+    console.log(`Successfully connected to contract address: ${contractAddress}`);
+
+    while (true) {
+        console.log("\n==================================================");
+        console.log("SYSTEM BALLOTSCORE BOARD TELEMETRY STATUS");
+        console.log("==================================================");
+        
+        try {
+            const total = await votingContract.candidatesCount();
+            if (Number(total) === 0) {
+                console.log("   No metrics recorded on the active blockchain ledger instance.");
+            } else {
+                for (let i = 1; i <= Number(total); i++) {
+                    const cand = await votingContract.candidates(i);
+                    console.log(`[ID: ${cand.id.toString()}] ${cand.name.padEnd(10)} — Recorded Votes: ${cand.voteCount.toString()}`);
+                }
+            }
+        } catch (err) {
+            console.error("Node fetching parsing transaction block crash.", err.message);
+        }
+        
+        console.log("==================================================");
+        console.log("Submit a Cryptographic Vote");
+        console.log("Flush & Hard-Refresh Local Data metrics");
+        console.log("Terminate Application Console Runtime");
+        console.log("==================================================");
+        
+        const choice = await askQuestion("\nKey in an operational execution line number (1-3): ");
+
+        if (choice === "1") {
+            const idInput = await askQuestion("Enter the numeric Candidate ID you wish to vote for: ");
+            const targetId = parseInt(idInput);
+            
+            if (isNaN(targetId) || targetId <= 0) {
+                console.log("Input exception. Key numeric variables listed on scoreboard.");
+                continue;
+            }
+
+            try {
+                console.log("Bundling parameters and applying digital key signatures...");
+                const txn = await votingContract.vote(targetId);
+                console.log(`Broadcast successful! Gas Hash index: ${txn.hash}`);
+                console.log("Awaiting validation check confirmation passes across nodes... Please wait.");
+                
+                await txn.wait();
+                console.log("Success! Your vote has been hard-coded securely onto the blockchain block matrix.");
+            } catch (err) {
+                if (err.reason) {
+                    console.error(`Transaction reverted by contract EVM criteria: ${err.reason}`);
+                } else if (err.message && err.message.includes("insufficient funds")) {
+                    console.error("Network block rejection: Your wallet lacks testnet ETH to offset transaction gas computations.");
+                } else {
+                    console.error(`Process failure loop crash: ${err.message}`);
+                }
+            }
+        } else if (choice === "2") {
+            console.log("Clearing caching arrays and fetching raw variables states...");
+            continue;
+        } else if (choice === "3") {
+            console.log("Uncoupling background terminal event listeners. Terminating instance.");
+            rl.close();
+            break;
+        } else {
+            console.log("Input out of parameters. Select numerical parameters between 1 and 3.");
+        }
+    }
+}
+
+main().catch((error) => {
+    console.error("SYSTEM RUNTIME FAULT EXCEPTION CRASH:", error);
+    process.exit(1);
+});
+
+2.Voting.sol
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract Voting {
+    struct Candidate {
+        uint256 id;
+        string name;
+        uint256 voteCount;
+    }
+
+    mapping(uint256 => Candidate) public candidates;
+    mapping(address => bool) public voters;
+    uint256 public candidatesCount;
+
+    event Voted(uint256 indexed candidateId, address indexed voter);
+
+    constructor(string[] memory _candidateNames) {
+        for (uint256 i = 0; i < _candidateNames.length; i++) {
+            addCandidate(_candidateNames[i]);
+        }
+    }
+
+    function addCandidate(string memory _name) private {
+        candidatesCount++;
+        candidates[candidatesCount] = Candidate(candidatesCount, _name, 0);
+    }
+
+    function vote(uint256 _candidateId) public {
+
+        require(!voters[msg.sender], "You have already voted.");
+        require(_candidateId > 0 && _candidateId <= candidatesCount, "Invalid candidate ID.");
+        voters[msg.sender] = true;
+        candidates[_candidateId].voteCount++;
+        emit Voted(_candidateId, msg.sender);
+    }
+}
