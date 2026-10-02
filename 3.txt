@@ -1,0 +1,24 @@
+const crypto = require('crypto')
+
+function sha256(data){
+	return crypto.createHash("sha256").update(data).digest('hex');
+}
+function merkelBuild(data){
+	if (!data || data.length == 0) return null;
+	let level = data.map(item => sha256(item));
+	console.log("Leaves: ", level);
+	while(level.length > 1){
+		let next = [];
+		for (i=0; i<level.length; i+=2){
+			let left = level[i];
+			let right = level[i+1] ? level[i+1]:left;
+			next.push(sha256(left + right))
+		}
+		level = next;
+		console.log("Next level: ", level);
+	}
+	return level[0];
+}
+
+let tx = ["tx1","tx2","tx3","tx4"]                           //for dynamic - let tx = process.argv.slice(2);     and run command:  node filename.js tx1 tx2 tx3
+console.log("Merkel Root: ",merkelBuild(tx));

@@ -1,0 +1,66 @@
+// 1. console.log
+console.log("Hello World");
+
+// 2. Variable
+let name = "John";
+console.log(name);
+
+// 3. Cannot reassign const
+const x = 10;
+// x = 20;   // error
+
+// 4. Arithmetic
+console.log(5 + 3);
+console.log(10 - 4);
+console.log(6 * 2);
+console.log(8 / 2);
+
+// 5. console.assert
+console.assert(1 > 3, "This is wrong");
+
+// 6. Time
+console.time("loop");
+for(let i=0; i<1000; i++){}
+console.timeEnd("loop");
+
+// 7. Table
+console.table(["A", "B", "C"]);
+
+// 8. Object + table
+let student = {name: "Ram", age: 20};
+console.table(student);
+
+// 9. Function
+function add(a, b) {
+  return a + b;
+}
+console.log(add(5, 3));
+
+// 10. Buffer
+let buf = Buffer.from("Hello");
+console.log(buf);
+
+// 11. Count
+console.count("test");
+console.count("test");
+
+// 12. For loop + count
+for(let i=0; i<3; i++) {
+  console.count("loop");
+}
+// 13. While loop
+let i = 0;
+while(i < 3) {
+  console.log(i);
+  i++;
+}
+
+// 14. Process
+console.log(process.version);
+console.log(process.platform);
+
+// 15. Base64
+let encoded = Buffer.from("Hello").toString("base64");
+console.log(encoded);
+let decoded = Buffer.from(encoded, "base64").toString();
+console.log(decoded);
