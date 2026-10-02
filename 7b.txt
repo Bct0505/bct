@@ -1,0 +1,80 @@
+const { Web3 } = require('web3');
+async function sendTransactionDemo() {
+    const fallbackRPCs = [
+        'https://1rpc.io',
+        'https://ankr.com',
+        'https://ethereum-sepolia-rpc.publicnode.com',
+        'https://endpoints.omniatech.io/v1/eth/sepolia/public'
+    ];
+
+    let web3;
+    let successfulURL = '';
+
+    console.log('--- Establishing Secure Blockchain Connection ---');
+    for(const url of fallbackRPCs){
+        try{
+            const tempWeb3 = new Web3(url);
+            await tempWeb3.eth.getBlockNumber(); 
+            web3 = tempWeb3;
+            successfulURL = url;
+            break; 
+        } 
+        catch(e){
+            console.log(`Route skipped: ${url} (Connection blocked or invalid response)`);
+        }
+    }
+
+    if(!web3){
+        console.error('\nCRITICAL: All public routes are blocked by your local network or firewall.');
+        console.log('TIP FOR TEACHER: Turn off your network VPN or switch to a mobile hotspot to clear local restrictions.');
+        return;
+    }
+
+    console.log(`Connection Established via: ${successfulURL}\n`);
+    const senderPrivateKey = '0x2b95d48938b96fa7ef9f3f24e5722a708eb7ad88021f47e36cb436a2b4396bea'; 
+    const account = web3.eth.accounts.privateKeyToAccount(senderPrivateKey);
+    const senderAddress = account.address;
+    const receiverAddress = '0x83f5818d44813fCa594fd3aa71182851e2Ae14df';
+
+    console.log(`Sender Address:   ${senderAddress}`);
+    console.log(`Receiver Address: ${receiverAddress}\n`);
+
+    try{
+        console.log('Fetching blockchain network metrics...');
+        const txCount = await web3.eth.getTransactionCount(senderAddress);
+        const networkGasPrice = await web3.eth.getGasPrice();
+
+        console.log(`Current Account Nonce:     ${txCount}`);
+        console.log(`Current Network Gas Price: ${networkGasPrice} Wei`);
+
+        const txObject = {
+            nonce: txCount,
+            to: receiverAddress,
+            value: web3.utils.toWei('0.001', 'ether'), 
+            gasLimit: 21000, 
+            gasPrice: networkGasPrice, 
+            chain: 'sepolia' 
+        };
+
+        console.log('\n--- Prepared Transaction Structure ---');
+        console.log(txObject);
+
+        console.log('\nSigning transaction structure...');
+        const signedTx = await web3.eth.accounts.signTransaction(txObject, senderPrivateKey);
+
+        console.log('Broadcasting transaction to the blockchain...');
+        const receipt = await web3.eth.sendSignedTransaction(signedTx.rawTransaction);
+        
+        console.log('\nSUCCESS! TRANSACTION PASSED THE EVM!');
+        console.log(`===================================================`);
+        console.log(`Transaction Hash: ${receipt.transactionHash}`);
+        console.log(`Block Number:     ${receipt.blockNumber}`);
+        console.log(`View Status On:   https://sepolia.etherscan.io/{receipt.transactionHash}`);
+        console.log(`===================================================`);
+    } 
+    catch(error){
+        console.error('\nExecution failed:', error.message);
+    }
+}
+
+sendTransactionDemo();
