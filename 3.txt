@@ -1,0 +1,42 @@
+AIM: Create a single Merkle Tree using Hash functions.
+CODE:
+import crypto from 'crypto'
+
+function sha256(data){
+    return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+function buildMerkelTree(dataArray){
+    if(!dataArray || dataArray.length == 0){
+        return null;
+    }
+
+let currentLevel = dataArray.map(item => sha256(item));
+console.log('Leaf Hashes: ', currentLevel);
+
+while(currentLevel.length > 1){
+    const nextLevel = [];
+
+    for (let i=0; i<currentLevel.length; i+=2){
+        const left = currentLevel[i];
+        const right = currentLevel[i+1] ? currentLevel[i+1]:left;
+        const parentHash = sha256(left+right);
+        nextLevel.push(parentHash);
+    }
+
+    currentLevel = nextLevel;
+    console.log('Next Level Hashes: ', currentLevel);
+}
+
+return currentLevel[0];
+
+}
+
+//const transaction = ['Tx1','Tx2','Tx3','Tx4','Tx5'];
+const transaction = ['Hello World']
+console.log('Original data: ', transaction);
+
+const merkelRoot = buildMerkelTree(transaction);
+console.log('Final Merkel Root: ',merkelRoot)
+
+

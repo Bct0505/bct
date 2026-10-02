@@ -1,0 +1,48 @@
+B. Dynamic Input Data.
+CODE:
+import crypto from "crypto";
+import readline from "readline";
+
+function sha256(data) {
+  return crypto.createHash("sha256").update(data).digest("hex");
+}
+
+function buildMerkleTree(dataArray) {
+  if (!dataArray || dataArray.length === 0) {
+    return null;
+  }
+
+  let currentLevel = dataArray.map((data) => sha256(data));
+  console.log("Leaf Hashes: ", currentLevel);
+
+  while (currentLevel.length > 1) {
+    const nextLevel = [];
+    for (let i = 0; i < currentLevel.length; i += 2) {
+      const left = currentLevel[i];
+      const right = currentLevel[i + 1] ? currentLevel[i + 1] : left;
+      const parentHash = sha256(left + right);
+      nextLevel.push(parentHash);
+    }
+    currentLevel = nextLevel;
+    console.log("Next Level Hashes: ", currentLevel);
+  }
+  return currentLevel[0];
+}
+
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+});
+
+rl.question("Enter Transactions: ", (input) => {
+  const transactions = input.split(",").map((tx) => tx.trim()).filter((tx) => tx.length > 0);
+  if (transactions.length === 0) {
+    console.log("No Valid Transactions Entered!!");
+  } 
+else {
+    console.log("Original Data:", transactions);
+    const merkleRoot = buildMerkleTree(transactions);
+    console.log("Final Merkle Root: ", merkleRoot);
+  }
+});
+
