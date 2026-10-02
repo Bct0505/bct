@@ -1,0 +1,226 @@
+1.Server2.js
+const express = require('express');
+const SupplyChainBlockchain = require('./blockchain');
+
+const app = express();
+const PORT = 3000;
+
+app.use(express.json());
+
+const supplyChain = new SupplyChainBlockchain();
+
+app.get('/blockchain', (req, res) => {
+    res.status(200).json({ 
+        chainLength: supplyChain.chain.length, 
+        chain: supplyChain.chain 
+    });
+});
+
+
+app.post('/transaction', (req, res) => {
+    const { itemId, sender, receiver, status, location, telemetry } = req.body;
+
+    if (!itemId || !sender || !receiver || !status || !location) {
+        return res.status(400).json({ error: "Missing required fields." });
+    }
+
+    try {
+        const tx = supplyChain.addTransaction(itemId, sender, receiver, status, location, telemetry);
+        res.status(201).json({ 
+            message: "Transaction verified by smart contract and staged.", 
+            transaction: tx 
+        });
+    } catch (error) {
+        res.status(400).json({ 
+            status: "REJECTED BY SMART CONTRACT", 
+            reason: error.message 
+        });
+    }
+});
+
+app.post('/mine', (req, res) => {
+    try {
+        const newBlock = supplyChain.minePendingTransactions();
+        if (!newBlock) {
+            return res.status(400).json({ message: "No pending transactions to mine." });
+        }
+        res.status(200).json({ 
+            message: "Staged transactions secured into block.", 
+            block: newBlock 
+        });
+    } catch (error) {
+        res.status(500).json({ error: "Mining failed.", reason: error.message });
+    }
+});
+
+app.get('/trace/:itemId', (req, res) => {
+    const history = supplyChain.getItemHistory(req.params.itemId);
+    if (!history || history.length === 0) {
+        return res.status(404).json({ error: "No records found for this item ID." });
+    }
+    res.status(200).json({ itemId: req.params.itemId, events: history });
+});
+
+app.get('/validate', (req, res) => {
+    const isValid = supplyChain.isChainValid();
+    res.status(200).json({ 
+        secure: isValid, 
+        msg: isValid ? "Ledger is valid and untampered." : "CRITICAL WARNING: Tampering detected!" 
+    });
+});
+
+app.listen(PORT, () => {
+    console.log(`Supply Chain Ecosystem live at http://localhost:${PORT}`);
+});
+
+2.Contract.js
+class SupplyChainSmartContract {
+    constructor() {
+        this.productRules = {
+            "VACCINE-BATCH": { maxTemperature: 8.0 },
+            "PERISHABLE-FOOD": { maxTemperature: 4.0 }
+        };
+    }
+
+    execute(transaction, currentChain) {
+        console.log(`\nSmart Contract: Verifying Item ${transaction.itemId}...`);
+
+        if (transaction.telemetry && transaction.telemetry.temperature !== undefined) {
+            const temp = transaction.telemetry.temperature;
+            for (const [key, rules] of Object.entries(this.productRules)) {
+                if (transaction.itemId.startsWith(key) && temp > rules.maxTemperature) {
+                    throw new Error(`CONTRACT VIOLATION: Temperature (${temp}°C) exceeded limit (${rules.maxTemperature}°C) for ${key}!`);
+                }
+            }
+        }
+
+        if (transaction.sender !== "ORIGIN") {
+            const currentOwner = this.findCurrentOwner(transaction.itemId, currentChain);
+            if (!currentOwner) {
+                throw new Error(`CONTRACT VIOLATION: Item ${transaction.itemId} has no recorded origin.`);
+            }
+            if (currentOwner !== transaction.sender) {
+                throw new Error(`CONTRACT VIOLATION: Unauthorized Transfer! '${transaction.sender}' does not own this item. Current custodian is '${currentOwner}'.`);
+            }
+        }
+
+        console.log("Smart Contract: Passed validation.");
+        return true;
+    }
+
+    findCurrentOwner(itemId, chain) {
+        let currentOwner = null;
+        for (const block of chain) {
+            for (const tx of block.transactions) {
+                if (tx.itemId === itemId) {
+                    currentOwner = tx.receiver;
+                }
+            }
+        }
+        return currentOwner;
+    }
+}
+
+module.exports = SupplyChainSmartContract;
+
+3.Blockchain.js
+const crypto = require('crypto');
+const SupplyChainSmartContract = require('./contract');
+
+class Block {
+    constructor(index, timestamp, transactions, previousHash = '') {
+        this.index = index;
+        this.timestamp = timestamp;
+        this.transactions = transactions;
+        this.previousHash = previousHash;
+        this.nonce = 0;
+        this.hash = this.calculateHash();
+    }
+
+    calculateHash() {
+        const blockString = JSON.stringify({
+            index: this.index,
+            timestamp: this.timestamp,
+            transactions: this.transactions,
+            previousHash: this.previousHash,
+            nonce: this.nonce
+        });
+        return crypto.createHash('sha256').update(blockString).digest('hex');
+    }
+
+    mineBlock(difficulty) {
+        const target = '0'.repeat(difficulty);
+        while (this.hash.substring(0, difficulty) !== target) {
+            this.nonce++;
+            this.hash = this.calculateHash();
+        }
+    }
+}
+
+class SupplyChainBlockchain {
+    constructor() {
+        this.chain = [];
+        this.pendingTransactions = [];
+        this.difficulty = 2; 
+        this.smartContract = new SupplyChainSmartContract();
+        this.createGenesisBlock();
+    }
+
+    createGenesisBlock() {
+        const genesisBlock = new Block(0, Date.now(), [{ info: "Genesis Block - System Initialized" }], "0");
+        this.chain.push(genesisBlock);
+    }
+
+    getLatestBlock() {
+        return this.chain[this.chain.length - 1];
+    }
+
+    addTransaction(itemId, sender, receiver, status, location, telemetry = {}) {
+        const newTx = { itemId, sender, receiver, status, location, telemetry, timestamp: Date.now() };
+        
+        this.smartContract.execute(newTx, this.chain);
+
+        this.pendingTransactions.push(newTx);
+        return newTx;
+    }
+
+    minePendingTransactions() {
+        if (this.pendingTransactions.length === 0) return null;
+
+        const newBlock = new Block(
+            this.chain.length,
+            Date.now(),
+            this.pendingTransactions,
+            this.getLatestBlock().hash
+        );
+
+        newBlock.mineBlock(this.difficulty);
+        this.chain.push(newBlock);
+        this.pendingTransactions = []; 
+        return newBlock;
+    }
+
+    getItemHistory(itemId) {
+        let history = [];
+        for (const block of this.chain) {
+            for (const tx of block.transactions) {
+                if (tx.itemId === itemId) {
+                    history.push({ blockIndex: block.index, ...tx });
+                }
+            }
+        }
+        return history;
+    }
+
+    isChainValid() {
+        for (let i = 1; i < this.chain.length; i++) {
+            const current = this.chain[i];
+            const previous = this.chain[i - 1];
+            if (current.hash !== current.calculateHash()) return false;
+            if (current.previousHash !== previous.hash) return false;
+        }
+        return true;
+    }
+}
+
+module.exports = SupplyChainBlockchain;
