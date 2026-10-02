@@ -1,0 +1,281 @@
+1.Test.js
+const AssetTransfer = require('./AssetTransfer');
+
+const mockState = {};
+
+const mockCtx = {
+    stub: {
+        putState: async (key, value) => { 
+            mockState[key] = value.toString(); 
+        },
+        getState: async (key) => {
+            return mockState[key] ? Buffer.from(mockState[key]) : Buffer.alloc(0);
+        },
+        deleteState: async (key) => { 
+            delete mockState[key]; 
+        },
+        getStateByRange: async (startKey, endKey) => {
+            const keys = Object.keys(mockState).sort();
+            let index = 0;
+            return {
+                next: async () => {
+                    if (index < keys.length) {
+                        const currentKey = keys[index++];
+                        return {
+                            value: {
+                                key: currentKey,
+                                value: Buffer.from(mockState[currentKey])
+                            },
+                            done: false
+                        };
+                    }
+                    return { done: true };
+                }
+            };
+        }
+    }
+};
+
+async function testBlockchainLifecycle() {
+    const contract = new AssetTransfer();
+    
+    console.log("=== 1. Initializing Ledger with default records ===");
+    await contract.InitLedger(mockCtx);
+    console.log("Initialization Complete.\n");
+
+    console.log("=== 2. Reading 'asset1' ===");
+    const asset1 = await contract.ReadAsset(mockCtx, 'asset1');
+    console.log("Result:", asset1, "\n");
+
+    console.log("=== 3. Creating a new asset ('asset3') ===");
+    await contract.CreateAsset(mockCtx, 'asset3', 'green', '15', 'Alice', '600');
+    console.log("Asset 3 successfully registered.\n");
+
+    console.log("=== 4. Attempting to create duplicate 'asset3' (Error test) ===");
+    try {
+        await contract.CreateAsset(mockCtx, 'asset3', 'yellow', '5', 'Bob', '100');
+    } catch (error) {
+        console.log("Caught expected safety block:", error.message, "\n");
+    }
+
+    console.log("=== 5. Transferring ownership of 'asset2' to 'Charlie' ===");
+    const transferred = await contract.TransferAsset(mockCtx, 'asset2', 'Charlie');
+    console.log("Updated Asset:", transferred, "\n");
+
+    console.log("=== 6. Fetching ALL active assets on our simulated ledger ===");
+    const allAssets = await contract.GetAllAssets(mockCtx);
+    console.log(JSON.parse(allAssets));
+}
+
+testBlockchainLifecycle().catch(console.error);
+
+2.	Input.js
+const readline = require('readline');
+const AssetTransfer = require('./AssetTransfer');
+
+const mockState = {};
+const mockCtx = {
+    stub: {
+        putState: async (key, value) => { mockState[key] = value.toString(); },
+        getState: async (key) => mockState[key] ? Buffer.from(mockState[key]) : Buffer.alloc(0),
+        deleteState: async (key) => { delete mockState[key]; },
+        getStateByRange: async () => {
+            const keys = Object.keys(mockState).sort();
+            let index = 0;
+            return {
+                next: async () => {
+                    if (index < keys.length) {
+                        const currentKey = keys[index++];
+                        return { value: { value: Buffer.from(mockState[currentKey]) }, done: false };
+                    }
+                    return { done: true };
+                }
+            };
+        }
+    }
+};
+
+
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+
+const askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
+const contract = new AssetTransfer();
+
+async function main() {
+    await contract.InitLedger(mockCtx);
+    console.log("=========================================");
+    console.log("  Fabric Smart Contract CLI Simulator    ");
+    console.log("=========================================\n");
+
+    while (true) {
+        console.log("Choose an operation:");
+        console.log("1. Create New Asset");
+        console.log("2. Read / View Asset");
+        console.log("3. Transfer Asset Owner");
+        console.log("4. View All Assets");
+        console.log("5. Exit");
+
+        const choice = await askQuestion("\nEnter option number (1-5): ");
+        console.log("\n-----------------------------------------");
+
+        try {
+            if (choice === '1') {
+                const id = await askQuestion("Enter Asset ID (e.g. asset3): ");
+                const color = await askQuestion("Enter Color: ");
+                const size = await askQuestion("Enter Size (number): ");
+                const owner = await askQuestion("Enter Owner Name: ");
+                const value = await askQuestion("Enter Appraised Value (number): ");
+
+                console.log("\n[Processing Blockchain Transaction...]");
+                const result = await contract.CreateAsset(mockCtx, id, color, size, owner, value);
+                console.log("Success! Created Asset Data:", JSON.parse(result));
+
+            } else if (choice === '2') {
+                const id = await askQuestion("Enter Asset ID to lookup: ");
+                
+                console.log("\n[Querying Ledger...]");
+                const result = await contract.ReadAsset(mockCtx, id);
+                console.log("Asset Found:", JSON.parse(result));
+
+            } else if (choice === '3') {
+                const id = await askQuestion("Enter Target Asset ID: ");
+                const newOwner = await askQuestion("Enter New Owner Name: ");
+
+                console.log("\n[Executing State Transfer...]");
+                const result = await contract.TransferAsset(mockCtx, id, newOwner);
+                console.log("Transfer Confirmed:", JSON.parse(result));
+
+            } else if (choice === '4') {
+                console.log("[Scanning World State DB...]");
+                const result = await contract.GetAllAssets(mockCtx);
+                console.log("Current Ledger Inventory:\n", JSON.parse(result));
+
+            } else if (choice === '5') {
+                console.log("Exiting Simulator. Goodbye!");
+                rl.close();
+                break;
+            } else {
+                console.log("Invalid option. Please select 1 through 5.");
+            }
+        } catch (error) {
+            console.log("Transaction Rejected:", error.message);
+        }
+        console.log("-----------------------------------------\n");
+    }
+}
+
+main().catch(console.error);
+
+3.	AssetTransfer.js
+'use strict';
+
+const { Contract } = require('fabric-contract-api');
+
+class AssetTransfer extends Contract {
+
+    async InitLedger(ctx) {
+        const assets = [
+            { ID: 'asset1', Color: 'blue', Size: 5, Owner: 'Tom', AppraisedValue: 300 },
+            { ID: 'asset2', Color: 'red', Size: 10, Owner: 'Brad', AppraisedValue: 400 },
+        ];
+
+        for (const asset of assets) {
+            asset.docType = 'asset';
+            await ctx.stub.putState(asset.ID, Buffer.from(JSON.stringify(asset)));
+        }
+    }
+
+    async CreateAsset(ctx, id, color, size, owner, appraisedValue) {
+        const exists = await this.AssetExists(ctx, id);
+        if (exists) {
+            throw new Error(`The asset ${id} already exists`);
+        }
+
+        const asset = {
+            ID: id,
+            Color: color,
+            Size: parseInt(size),
+            Owner: owner,
+            AppraisedValue: parseInt(appraisedValue),
+            docType: 'asset',
+        };
+
+        await ctx.stub.putState(id, Buffer.from(JSON.stringify(asset)));
+        return JSON.stringify(asset);
+    }
+
+    async ReadAsset(ctx, id) {
+        const assetJSON = await ctx.stub.getState(id);
+        if (!assetJSON || assetJSON.length === 0) {
+            throw new Error(`The asset ${id} does not exist`);
+        }
+        return assetJSON.toString();
+    }
+
+    async UpdateAsset(ctx, id, color, size, owner, appraisedValue) {
+        const exists = await this.AssetExists(ctx, id);
+        if (!exists) {
+            throw new Error(`The asset ${id} does not exist`);
+        }
+
+        const updatedAsset = {
+            ID: id,
+            Color: color,
+            Size: parseInt(size),
+            Owner: owner,
+            AppraisedValue: parseInt(appraisedValue),
+            docType: 'asset',
+        };
+
+        await ctx.stub.putState(id, Buffer.from(JSON.stringify(updatedAsset)));
+        return JSON.stringify(updatedAsset);
+    }
+
+    async TransferAsset(ctx, id, newOwner) {
+        const assetString = await this.ReadAsset(ctx, id);
+        const asset = JSON.parse(assetString);
+        
+        asset.Owner = newOwner;
+        
+        await ctx.stub.putState(id, Buffer.from(JSON.stringify(asset)));
+        return JSON.stringify(asset);
+    }
+
+    async DeleteAsset(ctx, id) {
+        const exists = await this.AssetExists(ctx, id);
+        if (!exists) {
+            throw new Error(`The asset ${id} does not exist`);
+        }
+        return await ctx.stub.deleteState(id);
+    }
+
+    async AssetExists(ctx, id) {
+        const assetJSON = await ctx.stub.getState(id);
+        return assetJSON && assetJSON.length > 0;
+    }
+
+    async GetAllAssets(ctx) {
+        const allResults = [];        
+        const iterator = await ctx.stub.getStateByRange('', '');
+        let result = await iterator.next();
+        
+        while (!result.done) {
+            const strValue = Buffer.from(result.value.value.toString()).toString('utf8');
+            let record;
+            try {
+                record = JSON.parse(strValue);
+            } catch (err) {
+                console.log(err);
+                record = strValue;
+            }
+            allResults.push(record);
+            result = await iterator.next();
+        }
+        return JSON.stringify(allResults);
+    }
+}
+
+module.exports = AssetTransfer;
